@@ -1,0 +1,134 @@
+pool: CI-CD-pool
+
+variables:
+    workingDirectory: '$(System.DefaultWorkingDirectory)/environment/dev'
+    backendServiceArm: 'vinayconnection'
+    backendAzureRmResourceGroupName: 'azure-infra'
+    backendAzureRmStorageAccountName: 'azureinfrasa123'
+    backendAzureRmContainerName: 'azurecontainer'
+    backendAzureRmKey: 'devil.tfstate'
+
+
+trigger:
+- main
+
+stages:
+
+  - stage: terraforminit
+    displayName: init
+    jobs:
+      - job: terraforminit
+        displayName: init
+        steps:
+        - task: TerraformTask@5
+          inputs:
+            provider: 'azurerm'
+            command: 'init'
+            workingDirectory: '$(workingDirectory)'
+            backendServiceArm: '$(backendServiceArm)'
+            backendAzureRmResourceGroupName: '$(backendAzureRmResourceGroupName)'
+            backendAzureRmStorageAccountName: '$(backendAzureRmStorageAccountName)'
+            backendAzureRmContainerName: '$(backendAzureRmContainerName)'
+            backendAzureRmKey: '$(backendAzureRmKey)'
+
+
+  - stage: terraformvalidate
+    displayName: validate
+    dependsOn: terraforminit
+    jobs:
+      - job: terraformvalidate
+        displayName: validate
+        steps:
+        - task: TerraformTask@5
+          inputs:
+            provider: 'azurerm'
+            command: 'init'
+            workingDirectory: '$(workingDirectory)'
+            backendServiceArm: '$(backendServiceArm)'
+            backendAzureRmResourceGroupName: '$(backendAzureRmResourceGroupName)'
+            backendAzureRmStorageAccountName: '$(backendAzureRmStorageAccountName)'
+            backendAzureRmContainerName: '$(backendAzureRmContainerName)'
+            backendAzureRmKey: '$(backendAzureRmKey)'
+
+        - task: TerraformTask@5
+          inputs:
+            provider: 'azurerm'
+            command: 'validate'
+            workingDirectory: '$(workingDirectory)'
+
+
+  - stage: scanning
+    displayName: tfsecandgitleaks
+    dependsOn: terraformvalidate
+    jobs:
+      - job: tfsecandtflint
+        steps:
+        - task: tfsec@1
+          inputs:
+            version: 'v1.26.0'
+
+        - task: Gitleaks@3
+          inputs:
+            scanlocation: '$(Build.SourcesDirectory)/environment/dev'
+            configtype: 'default'
+            reportformat: 'sarif'
+
+        - task: PowerShell@2
+          inputs:
+            targetType: 'inline'
+            script: 'checkov -d . -o json'
+
+  - stage: terraformplan
+    displayName: plan
+    condition: succeeded()
+    dependsOn: scanning
+    jobs:
+      - job: plan
+        displayName: plan
+        steps:
+        - task: TerraformTask@5
+          inputs:
+            provider: 'azurerm'
+            command: 'init'
+            workingDirectory: '$(workingDirectory)'
+            backendServiceArm: '$(backendServiceArm)'
+            backendAzureRmResourceGroupName: '$(backendAzureRmResourceGroupName)'
+            backendAzureRmStorageAccountName: '$(backendAzureRmStorageAccountName)'
+            backendAzureRmContainerName: '$(backendAzureRmContainerName)'
+            backendAzureRmKey: '$(backendAzureRmKey)'
+
+        - task: TerraformTask@5
+          inputs:
+            provider: 'azurerm'
+            command: 'plan'
+            workingDirectory: '$(workingDirectory)'
+            environmentServiceNameAzureRM: 'vinayconnection'
+
+
+  - stage: terraformapply
+    displayName: apply
+    dependsOn: terraformplan
+    condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'))
+
+    jobs:
+      - job: apply
+        displayName: apply
+        steps:
+        - task: TerraformTask@5
+          inputs:
+            provider: 'azurerm'
+            command: 'init'
+            workingDirectory: '$(workingDirectory)'
+            backendServiceArm: '$(backendServiceArm)'
+            backendAzureRmResourceGroupName: '$(backendAzureRmResourceGroupName)'
+            backendAzureRmStorageAccountName: '$(backendAzureRmStorageAccountName)'
+            backendAzureRmContainerName: '$(backendAzureRmContainerName)'
+            backendAzureRmKey: '$(backendAzureRmKey)'
+
+        - task: TerraformTask@5
+          inputs:
+            provider: 'azurerm'
+            command: 'apply'
+            workingDirectory: '$(workingDirectory)'
+            environmentServiceNameAzureRM: 'vinayconnection'
+
